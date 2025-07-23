@@ -26,10 +26,10 @@ class NotionDatabaseAutomation:
         self.target_database_name = "项目笔记 - yuanxu (1)"
         
         self.new_columns = {
-            "估值": {"type": "rich_text"},
-            "概要": {"type": "rich_text"}, 
-            "市场规模": {"type": "rich_text"},
-            "营收": {"type": "rich_text"}
+            "估值": {"rich_text": {}},
+            "概要": {"rich_text": {}}, 
+            "市场规模": {"rich_text": {}},
+            "营收": {"rich_text": {}}
         }
         
     def find_target_database(self) -> Optional[str]:
@@ -114,43 +114,44 @@ class NotionDatabaseAutomation:
             logger.error(f"Error querying database: {e}")
             return []
     
-    def extract_file_references(self, entry: Dict[str, Any]) -> List[str]:
-        """Extract file references from the first column of an entry."""
-        properties = entry.get("properties", {})
-        
-        first_property_key = list(properties.keys())[0] if properties else None
-        if not first_property_key:
-            return []
-        
-        first_property = properties[first_property_key]
-        file_references = []
-        
-        if first_property.get("type") == "files":
-            files = first_property.get("files", [])
-            for file_obj in files:
-                if file_obj.get("type") == "file":
-                    file_references.append(file_obj["file"]["url"])
-                elif file_obj.get("type") == "external":
-                    file_references.append(file_obj["external"]["url"])
-        
-        elif first_property.get("type") == "url":
-            url = first_property.get("url")
-            if url:
-                file_references.append(url)
-        
-        elif first_property.get("type") == "rich_text":
-            rich_text = first_property.get("rich_text", [])
-            for text_obj in rich_text:
-                if text_obj.get("href"):
-                    file_references.append(text_obj["href"])
-        
-        elif first_property.get("type") == "title":
-            title = first_property.get("title", [])
-            for text_obj in title:
-                if text_obj.get("href"):
-                    file_references.append(text_obj["href"])
-        
-        return file_references
+    def extract_page_content(self, page_id: str) -> str:
+        """Extract all text content from a Notion page."""
+        try:
+            blocks_response = self.client.blocks.children.list(block_id=page_id)
+            blocks = blocks_response.get("results", [])
+            
+            content_parts = []
+            
+            for block in blocks:
+                block_type = block.get("type", "")
+                
+                if block_type in ["paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item"]:
+                    rich_text = block.get(block_type, {}).get("rich_text", [])
+                    text_content = ''.join([text_obj.get("plain_text", "") for text_obj in rich_text])
+                    if text_content.strip():
+                        content_parts.append(text_content.strip())
+                
+                elif block_type == "table":
+                    try:
+                        table_response = self.client.blocks.children.list(block_id=block["id"])
+                        table_rows = table_response.get("results", [])
+                        for row in table_rows:
+                            if row.get("type") == "table_row":
+                                cells = row.get("table_row", {}).get("cells", [])
+                                row_text = []
+                                for cell in cells:
+                                    cell_text = ''.join([text_obj.get("plain_text", "") for text_obj in cell])
+                                    row_text.append(cell_text.strip())
+                                if any(row_text):
+                                    content_parts.append(" | ".join(row_text))
+                    except Exception as e:
+                        self.logger.warning(f"Error extracting table content: {e}")
+            
+            return "\n".join(content_parts)
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting page content: {e}")
+            return ""
     
     def fetch_content_from_url(self, url: str) -> str:
         """Fetch content from a URL."""
@@ -284,34 +285,21 @@ class NotionDatabaseAutomation:
             logger.info(f"Processing entry {i+1}/{len(entries)}")
             
             page_id = entry["id"]
-            file_references = self.extract_file_references(entry)
+            page_content = self.extract_page_content(page_id)
             
-            if not file_references:
-                logger.info(f"No file references found in entry {i+1}")
+            if not page_content.strip():
+                logger.info(f"No content found in entry {i+1}")
                 continue
             
-            all_content = []
+            logger.info(f"Extracted {len(page_content)} characters of content from entry {i+1}")
             
-            for file_ref in file_references:
-                logger.info(f"Processing file reference: {file_ref}")
-                
-                if "notion.so" in file_ref or file_ref.startswith("/"):
-                    notion_page_id = file_ref.split("/")[-1].split("?")[0].split("-")[-1]
-                    content = self.get_notion_page_content(notion_page_id)
-                else:
-                    content = self.fetch_content_from_url(file_ref)
-                
-                if content:
-                    all_content.append(content)
+            extracted_info = self.extract_information_from_content(page_content)
             
-            if all_content:
-                combined_content = "\n\n".join(all_content)
-                extracted_info = self.extract_information_from_content(combined_content)
-                
-                if self.update_page_properties(page_id, extracted_info):
-                    success_count += 1
+            if self.update_page_properties(page_id, extracted_info):
+                success_count += 1
+                logger.info(f"Successfully updated entry {i+1}")
             else:
-                logger.warning(f"No content extracted for entry {i+1}")
+                logger.warning(f"Failed to update entry {i+1}")
         
         logger.info(f"Successfully processed {success_count}/{len(entries)} entries")
         return success_count > 0
