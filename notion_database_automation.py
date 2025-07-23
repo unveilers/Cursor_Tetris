@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Notion Database Automation Script
+Notion Database Automation Script with MiniMax M1 AI Integration
 Connects to Frank's Notion workspace and modifies the "项目笔记 - yuanxu (1)" database
-by adding new columns and populating them with extracted information.
+by adding new columns and populating them with AI-extracted information using MiniMax M1.
 """
 
 import os
 import sys
 import re
 import logging
+import time
 from typing import Dict, List, Optional, Any
 from notion_client import Client
 import requests
@@ -191,8 +192,102 @@ class NotionDatabaseAutomation:
             logger.error(f"Error getting Notion page content: {e}")
             return ""
     
-    def extract_information_from_content(self, content: str) -> Dict[str, str]:
-        """Extract relevant information from content for the four categories."""
+    def analyze_content_with_minimax(self, content: str) -> Dict[str, str]:
+        """
+        Analyze content using MiniMax M1 API to extract structured information.
+        
+        Args:
+            content: The text content to analyze
+            
+        Returns:
+            Dictionary with extracted information for each category
+        """
+        api_key = os.getenv("AIMLAPI_KEY")
+        if not api_key:
+            logger.error("AIMLAPI_KEY environment variable not set")
+            return self.fallback_extraction(content)
+        
+        prompt = f"""请分析以下商业内容，并提取四个关键信息类别。请以JSON格式返回结果，包含以下字段：
+
+1. "估值": 提取公司估值、融资金额、投资轮次等相关信息
+2. "概要": 生成简洁的业务概要（不超过150字）
+3. "市场规模": 提取市场规模、目标市场、行业数据等信息
+4. "营收": 提取营收、销售额、财务表现等相关数据
+
+如果某个类别的信息不存在或不明确，请返回空字符串。
+
+内容：
+{content[:8000]}
+
+请返回标准JSON格式：
+{{"估值": "", "概要": "", "市场规模": "", "营收": ""}}"""
+
+        try:
+            response = requests.post(
+                "https://api.aimlapi.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "minimax/m1",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    "max_tokens": 1000,
+                    "temperature": 0.3
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                content_text = result["choices"][0]["message"]["content"]
+                
+                try:
+                    json_match = re.search(r'\{.*\}', content_text, re.DOTALL)
+                    if json_match:
+                        extracted_info = json.loads(json_match.group())
+                        
+                        required_keys = ["估值", "概要", "市场规模", "营收"]
+                        if all(key in extracted_info for key in required_keys):
+                            logger.info("Successfully extracted information using MiniMax M1")
+                            return extracted_info
+                        else:
+                            logger.warning("MiniMax response missing required keys, using fallback")
+                            return self.fallback_extraction(content)
+                    else:
+                        logger.warning("No JSON found in MiniMax response, using fallback")
+                        return self.fallback_extraction(content)
+                        
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse MiniMax JSON response: {e}, using fallback")
+                    return self.fallback_extraction(content)
+                    
+            else:
+                logger.error(f"MiniMax API request failed with status {response.status_code}: {response.text}")
+                return self.fallback_extraction(content)
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"MiniMax API request failed: {e}")
+            return self.fallback_extraction(content)
+        except Exception as e:
+            logger.error(f"Unexpected error in MiniMax analysis: {e}")
+            return self.fallback_extraction(content)
+    
+    def fallback_extraction(self, content: str) -> Dict[str, str]:
+        """
+        Fallback extraction method using keyword matching when MiniMax API fails.
+        
+        Args:
+            content: The text content to analyze
+            
+        Returns:
+            Dictionary with extracted information for each category
+        """
         content_lower = content.lower()
         
         valuation_keywords = [
@@ -293,7 +388,9 @@ class NotionDatabaseAutomation:
             
             logger.info(f"Extracted {len(page_content)} characters of content from entry {i+1}")
             
-            extracted_info = self.extract_information_from_content(page_content)
+            extracted_info = self.analyze_content_with_minimax(page_content)
+            
+            time.sleep(1)
             
             if self.update_page_properties(page_id, extracted_info):
                 success_count += 1
@@ -330,6 +427,7 @@ def main():
     print()
     
     api_token = os.getenv("NOTION_API_TOKEN")
+    aimlapi_key = os.getenv("AIMLAPI_KEY")
     
     if not api_token:
         print("ERROR: NOTION_API_TOKEN environment variable not set!")
@@ -344,6 +442,17 @@ def main():
         print("7. Give the integration access to your database by sharing it")
         print()
         sys.exit(1)
+    
+    if not aimlapi_key:
+        print("WARNING: AIMLAPI_KEY environment variable not set!")
+        print("The script will use fallback keyword extraction instead of MiniMax M1 AI.")
+        print()
+        print("To enable MiniMax M1 AI analysis:")
+        print("1. Sign up at https://aimlapi.com")
+        print("2. Get your API key")
+        print("3. Set it as environment variable: export AIMLAPI_KEY='your_key_here'")
+        print()
+        input("Press Enter to continue with fallback extraction or Ctrl+C to exit...")
     
     automation = NotionDatabaseAutomation(api_token)
     

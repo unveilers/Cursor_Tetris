@@ -1,6 +1,6 @@
-# Notion Database Automation
+# Notion Database Automation with MiniMax M1 AI
 
-This project automates the process of adding columns to a Notion database and populating them with extracted information from referenced files.
+This project automates the process of adding columns to a Notion database and populating them with AI-extracted information using MiniMax M1 for improved accuracy.
 
 ## Overview
 
@@ -12,11 +12,11 @@ The automation script connects to Frank's Notion workspace and:
    - 市场规模 (Market Size)
    - 营收 (Revenue)
 
-2. **Reads files** referenced in the first column of existing database entries
+2. **Reads content** directly from Notion pages in the database
 
-3. **Extracts relevant information** from those files using keyword matching and content analysis
+3. **Analyzes content** using MiniMax M1 AI for intelligent information extraction
 
-4. **Populates the new columns** with the extracted data
+4. **Populates the new columns** with AI-extracted structured data
 
 ## Quick Start
 
@@ -30,17 +30,23 @@ The automation script connects to Frank's Notion workspace and:
    - Copy the API token
    - Share your database with the integration
 
-3. **Set environment variable:**
+3. **Set up MiniMax M1 API:**
+   - Sign up at https://aimlapi.com
+   - Get your API key
+
+4. **Set environment variables:**
    ```bash
-   export NOTION_API_TOKEN="your_token_here"
+   export NOTION_API_TOKEN="your_notion_token_here"
+   export AIMLAPI_KEY="your_aimlapi_key_here"
    ```
 
-4. **Test the connection:**
+5. **Test the connections:**
    ```bash
    python test_connection.py
+   python test_minimax_integration.py
    ```
 
-5. **Run the automation:**
+6. **Run the automation:**
    ```bash
    python notion_database_automation.py
    ```
@@ -55,20 +61,22 @@ The automation script connects to Frank's Notion workspace and:
 
 ## Features
 
+- **AI-Powered Analysis**: Uses MiniMax M1 for intelligent content analysis and information extraction
+- **Fallback System**: Falls back to keyword matching if AI analysis fails
 - **Robust error handling** for network issues and API limits
-- **Multiple file type support** (Notion pages, external URLs, file attachments)
-- **Intelligent content extraction** using keyword matching
+- **Content Analysis**: Reads and analyzes content directly from Notion pages
+- **Rate Limiting**: Respects API rate limits with appropriate delays
 - **Progress logging** with detailed status updates
 - **Safe operation** - only adds new columns, doesn't modify existing data
 
 ## Information Extraction
 
-The script uses keyword matching to categorize information:
+The script uses MiniMax M1 AI to intelligently extract and categorize information:
 
-- **估值 (Valuation)**: Looks for funding, investment, valuation amounts
-- **概要 (Overview)**: Creates summaries from main content and titles  
-- **市场规模 (Market Size)**: Finds market size, TAM, industry data
-- **营收 (Revenue)**: Extracts revenue, sales, financial performance data
+- **估值 (Valuation)**: AI-extracted funding rounds, company valuations, investment amounts
+- **概要 (Overview)**: AI-generated business summaries and key highlights  
+- **市场规模 (Market Size)**: AI-identified market size, TAM, industry data
+- **营收 (Revenue)**: AI-extracted revenue figures, sales data, financial performance
 
 ## Security
 
